@@ -536,43 +536,50 @@ def _clean_cycle():
 
 
 
-def _is_movie_subdir(path):
-	try:
-		return os.path.basename(os.path.normpath(path)) == "movie"
-	except Exception:
-		return False
-
-
-def _patch_no_movie_dir():
-	"""Block stock OpenPLi from creating .../movie (AutoMount + Harddisk). Do not create, do not delete-after."""
+def _patch_automount_no_movie_subdir():
+	"""Fix root cause: stock AutoMount.makeHDDlink always mkdir /media/hdd/movie.
+	Replace that method with the same HDD symlink logic and omit the movie/ step.
+	Also disable Harddisk.createMovieDir which does the same mkdir."""
 	try:
 		from Components.Harddisk import Harddisk
 		Harddisk.createMovieDir = lambda self: None
-		_log("Harddisk.createMovieDir blocked")
+		_log("Harddisk.createMovieDir replaced with no-op")
 	except Exception as e:
 		_log("Harddisk patch failed: %s" % e)
 	try:
+		from Plugins.SystemPlugins.NetworkBrowser import AutoMount as _am_mod
 		from Plugins.SystemPlugins.NetworkBrowser.AutoMount import AutoMount
-		_orig = AutoMount.makeHDDlink
-		_real_mkdir = os.mkdir
+		_rm_rf = getattr(_am_mod, "rm_rf", None)
 
-		def _blocked_mkdir(path, mode=0o777):
-			if _is_movie_subdir(path):
-				_log("blocked mkdir %s" % path)
-				return None
-			return _real_mkdir(path, mode)
-
-		def _makeHDDlink(self, path):
-			os.mkdir = _blocked_mkdir
+		def makeHDDlink(self, path):
+			# Same as OpenPLi AutoMount.makeHDDlink, without creating movie/
+			hdd_dir = "/media/hdd"
+			print("[AutoMount.py] symlink %s %s" % (path, hdd_dir))
 			try:
-				return _orig(self, path)
-			finally:
-				os.mkdir = _real_mkdir
+				if os.path.islink(hdd_dir):
+					if os.readlink(hdd_dir) != path:
+						os.remove(hdd_dir)
+						os.symlink(path, hdd_dir)
+				elif (not os.path.ismount(hdd_dir)) and os.path.isdir(hdd_dir):
+					if _rm_rf is not None:
+						_rm_rf(hdd_dir)
+					else:
+						import shutil
+						shutil.rmtree(hdd_dir, ignore_errors=True)
+				try:
+					if not os.path.islink(hdd_dir):
+						os.symlink(path, hdd_dir)
+				except OSError as ex:
+					print("[AutoMount.py] add symlink fails!", ex)
+			except Exception as e:
+				_log("makeHDDlink error: %s" % e)
+			# intentionally no os.mkdir(.../movie)
 
-		AutoMount.makeHDDlink = _makeHDDlink
-		_log("AutoMount.makeHDDlink: movie/ mkdir blocked")
+		AutoMount.makeHDDlink = makeHDDlink
+		_log("AutoMount.makeHDDlink replaced (no movie/ subdir)")
 	except Exception as e:
 		_log("AutoMount patch failed: %s" % e)
+
 
 # ---------------------------------------------------------------------------
 # Setup GUI — user-facing product name: LE Auto Record (Logic Encoder)
@@ -748,7 +755,7 @@ def autostart(reason, **kwargs):
 		InfoBarTimeshift.stopTimeshiftcheckTimeshiftRunningCallback = patched_stopCb
 		_patched = True
 		_clean_timer is None and _clean_cycle()
-		_patch_no_movie_dir()
+		_patch_automount_no_movie_subdir()
 		_log("patches applied (LE Auto Record)")
 
 
