@@ -3,42 +3,40 @@
 **Logic Encoder** — https://logicencoder.com  
 GitHub: [`logicencoder/le-auto-record`](https://github.com/logicencoder/le-auto-record)
 
-OpenPLi can start a background TV buffer, but it does not turn what you actually watched into normal movie files. On OpenATV that “save every watched programme” behaviour exists in the image. **LE Auto Record** brings the same outcome to OpenPLi: watch TV, change channel or wait for the EPG event to end, and a named `.ts` recording appears in your movie folder (local disk or NAS).
-
-The box still uses its timeshift engine under the hood — that is the only buffer OpenPLi has. The product is automatic recording, not a pause-live-TV utility.
+OpenPLi can keep a live TV buffer in the background, but it does **not** turn what you watched into normal movie files. **LE Auto Record** does: watch long enough, change channel or wait for the EPG programme to end, and a named `.ts` appears in your movie folder (disk or NAS).
 
 ## Install
 
-On the receiver (SSH or file manager), copy the plugin folder:
-
 ```bash
-# from this repository
-cp -a LeAutoTimeshift /usr/lib/enigma2/python/Plugins/Extensions/
-rm -f /usr/lib/enigma2/python/Plugins/Extensions/LeAutoTimeshift/*.pyc
+cp -a LEAutoRecord /usr/lib/enigma2/python/Plugins/Extensions/
+rm -f /usr/lib/enigma2/python/Plugins/Extensions/LEAutoRecord/*.pyc
 ```
 
-Restart the Enigma2 GUI (Menu → Standby / restart GUI, or reboot the box).
+Restart the Enigma2 GUI. Open:
 
-Open:
-
-**Menu → Plugins → LE Auto Record**  
-(also under Extensions)
+**Menu → Plugins → LE Auto Record**
 
 - **GREEN / OK** — save  
 - **RED / EXIT** — cancel  
-- **YELLOW** — About (author + https://logicencoder.com)
+- **YELLOW** — About (Logic Encoder · https://logicencoder.com)
 
-Set **Folder for saved movies** to your recording path, enable auto-record, and leave OpenPLi’s own “Automatically start timeshift after …” enabled so the buffer actually runs.
+Enable auto-record, set **Folder for saved movies**, and keep OpenPLi’s own “Automatically start …” delay enabled so the live buffer actually runs.
+
+If you previously installed the old folder name `LeAutoTimeshift`, remove it after copying `LEAutoRecord`:
+
+```bash
+rm -rf /usr/lib/enigma2/python/Plugins/Extensions/LeAutoTimeshift
+```
 
 ## What is included
 
 | Feature | Role |
 |--------|------|
 | Auto-record of watched programmes | Core — writes normal `.ts` files |
-| Setup GUI | Configure path, min zap length, EPG split, cleanup |
-| CIFS mount watchdog | If a NAS movie folder drops, try remount so recording can continue |
-| Volume / mute persistence | **Not included** |
-| Permanent OSD clock | **Not included** — use stock **PermanentClock** |
+| Setup GUI | Path, min zap length, EPG split, cleanup |
+| CIFS mount watchdog | Remount NAS movie folder if it drops |
+| Volume / mute | Not included |
+| Permanent OSD clock | Not included — use **PermanentClock** |
 
 ## Settings (GUI)
 
@@ -48,7 +46,7 @@ Set **Folder for saved movies** to your recording path, enable auto-record, and 
 | Save every watched programme | Write movie files from the buffer |
 | Folder for saved movies | Destination for `.ts` files |
 | New file when programme changes (EPG) | One file per show |
-| Ignore zaps shorter than (minutes) | Channel surfing does not create junk |
+| Ignore zaps shorter than (minutes) | Surfing does not create junk |
 | Seconds before EPG end to rotate file | Clean split between programmes |
 | Cleanup check every | How often leftovers are tidied |
 | Keep only newest N autosaves | Cap disk use (`0` = keep all) |
@@ -57,29 +55,28 @@ Set **Folder for saved movies** to your recording path, enable auto-record, and 
 
 ## Requirements
 
-- OpenPLi (developed/tested on OpenPLi 9.2, VU+ Duo4K SE)
-- Enough free space on the movie folder
-- For network shares: a working CIFS/automount setup
+- OpenPLi (tested: OpenPLi 9.2, VU+ Duo4K SE)
+- Free space on the movie folder
+- For network shares: working CIFS/automount
 
 ## Package layout
 
 ```text
-LeAutoTimeshift/          # install this folder under Extensions/
+LEAutoRecord/
   __init__.py
-  plugin.py               # autostart hooks + Setup screen
+  plugin.py
 ```
 
 ## Limitations
 
-- Needs the background buffer running (OpenPLi timeshift auto-start or manual start).
-- Hardlinks used on OpenATV are not used here; on CIFS the plugin mark/stop/moves the buffer instead.
-- Short zaps below the configured minimum minutes are discarded on purpose.
+- Needs the live buffer running (OpenPLi auto-start delay or manual start).
+- On CIFS, buffers are moved (not hardlinked).
+- Short zaps below the minimum minutes are discarded on purpose.
 
 ## Support
 
 Logic Encoder — https://logicencoder.com  
-Issues: use the GitHub repository issue tracker.
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Keep author credit and the site link in the plugin About screen when redistributing.
+MIT — see [LICENSE](LICENSE). Keep author credit and the site link when redistributing.

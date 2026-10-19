@@ -1,16 +1,17 @@
-# LE Auto Record (package: LeAutoTimeshift)
+# LE Auto Record
 # Logic Encoder — https://logicencoder.com
 #
 # What this solves:
-#   OpenPLi can start a background TV buffer, but it does NOT turn what you
-#   watched into normal movie files. On OpenATV that "save every watched show"
-#   behaviour exists built-in. This plugin brings the same result to OpenPLi:
-#   watch TV -> on channel change / end of programme -> named .ts on disk/NAS.
+#   OpenPLi can keep a live TV buffer, but it does NOT save what you watched
+#   as normal movie files. This plugin does: watch long enough -> named .ts
+#   on disk/NAS when you zap or the EPG programme ends.
 #
-# Internally it still uses Enigma2's timeshift engine (that is the only buffer
-# OpenPLi has). Users should ignore that word — the product is auto-record.
+# The live buffer is an Enigma2 engine feature (API names still say
+# "timeshift"). That word is not the product name — the product is
+# LE Auto Record.
 #
 # Author: Logic Encoder (logicencoder) — https://logicencoder.com
+# Install folder: LEAutoRecord
 
 import os
 from time import time, strftime
@@ -68,13 +69,27 @@ if not hasattr(config.timeshift, "maxHours"):
 if not hasattr(config.timeshift, "checkFreeSpace"):
 	config.timeshift.checkFreeSpace = ConfigInteger(default=0, limits=(0, 65536))
 
-config.plugins.leautots = ConfigSubsection()
-if not hasattr(config.plugins.leautots, "enabled"):
-	config.plugins.leautots.enabled = ConfigYesNo(default=True)
-if not hasattr(config.plugins.leautots, "minminutes"):
-	config.plugins.leautots.minminutes = ConfigInteger(default=10, limits=(0, 600))
-if not hasattr(config.plugins.leautots, "margin"):
-	config.plugins.leautots.margin = ConfigInteger(default=15, limits=(5, 300))
+config.plugins.lear = ConfigSubsection()
+if not hasattr(config.plugins.lear, "enabled"):
+	config.plugins.lear.enabled = ConfigYesNo(default=True)
+if not hasattr(config.plugins.lear, "minminutes"):
+	config.plugins.lear.minminutes = ConfigInteger(default=10, limits=(0, 600))
+if not hasattr(config.plugins.lear, "margin"):
+	config.plugins.lear.margin = ConfigInteger(default=15, limits=(5, 300))
+
+# One-time migrate from older package name (leautots)
+try:
+	_old = getattr(config.plugins, "leautots", None)
+	if _old is not None:
+		for _name in ("enabled", "minminutes", "margin"):
+			if hasattr(_old, _name) and hasattr(config.plugins.lear, _name):
+				try:
+					getattr(config.plugins.lear, _name).value = getattr(_old, _name).value
+				except Exception:
+					pass
+except Exception:
+	pass
+
 # Volume/mute and OSD clock are NOT handled here (use box defaults / PermanentClock).
 
 _orig_startTimeshift = InfoBarTimeshift.startTimeshift
@@ -91,11 +106,11 @@ _self = None  # last InfoBarTimeshift instance that was armed
 # ---------------------------------------------------------------------------
 def _log(msg):
 	try:
-		with open("/tmp/leautots.log", "a") as f:
+		with open("/tmp/lear.log", "a") as f:
 			f.write("%s %s\n" % (strftime("%H:%M:%S"), msg))
 	except Exception:
 		pass
-	print("[LeAutoTS]", msg)
+	print("[LEAutoRecord]", msg)
 
 
 def _cfg(name, default=None):
@@ -107,7 +122,7 @@ def _cfg(name, default=None):
 
 def _enabled():
 	try:
-		if not config.plugins.leautots.enabled.value:
+		if not config.plugins.lear.enabled.value:
 			return False
 		v = _cfg("autorecord")
 		return True if v is None else v
@@ -117,7 +132,7 @@ def _enabled():
 
 def _test_secs():
 	try:
-		with open("/tmp/leautots_test") as f:
+		with open("/tmp/lear_test") as f:
 			v = int(f.read().strip() or "45")
 			return v if v > 0 else 0
 	except Exception:
@@ -126,14 +141,14 @@ def _test_secs():
 
 def _min_secs():
 	try:
-		with open("/tmp/leautots_min") as f:
+		with open("/tmp/lear_min") as f:
 			return max(0, int(f.read().strip() or "0"))
 	except Exception:
 		pass
 	if _test_secs():
 		return 0
 	try:
-		return config.plugins.leautots.minminutes.value * 60
+		return config.plugins.lear.minminutes.value * 60
 	except Exception:
 		return 600
 
@@ -161,7 +176,7 @@ def _event_info(self):
 
 
 # ---------------------------------------------------------------------------
-# arming - called after every timeshift (re)start
+# arming - called after every live-buffer (re)start
 # ---------------------------------------------------------------------------
 def _arm(self):
 	global _self
@@ -189,7 +204,7 @@ def _arm(self):
 
 def _arm_event_timer(self):
 	remaining = self.currentEventTime()
-	margin = config.plugins.leautots.margin.value
+	margin = config.plugins.lear.margin.value
 	if remaining > margin + 5:
 		try:
 			self.new_timeshift_filename = self.generateNewTimeshiftFileName()
@@ -328,7 +343,7 @@ def patched_saveFiles(self):
 
 
 # sidecar sweep - engine writes .sc/.cuts asynchronously AFTER save returns;
-# sweeps "*.ts.<ext>" artifacts only - live timeshift.* buffers never match
+# sweeps "*.ts.<ext>" artifacts only - live buffer files never match
 _SIDECAR_EXTS = (".sc", ".cuts", ".ap", ".eit", ".del", ".meta")
 _sweep_timers = []
 
@@ -380,9 +395,9 @@ def patched_stopCb(self, answer):
 
 
 # ---------------------------------------------------------------------------
-# cleanup daemon - port of OpenATV ptsCleanTimeshiftFolder
+# cleanup daemon - port of OpenATV leftover-buffer cleanup
 #   runs every checkEvents minutes on the recording dir:
-#   - removes orphan timeshift.* leftovers (not the live buffer)
+#   - removes orphan live-buffer leftovers (not the active buffer)
 #   - enforces maxEvents on autosaved recordings (files with "autosaved" meta)
 #   - deletes leftovers older than maxHours
 # ---------------------------------------------------------------------------
@@ -460,9 +475,9 @@ def _mount_watchdog(directory):
 	try:
 		if _self is not None and _enabled() and not _self.timeshiftEnabled():
 			_self.startTimeshift()
-			_log("watchdog: timeshift restarted after remount")
+			_log("watchdog: buffer restarted after remount")
 	except Exception as e:
-		_log("watchdog: timeshift kick failed: %s" % e)
+		_log("watchdog: buffer kick failed: %s" % e)
 
 
 def _clean_cycle():
@@ -579,9 +594,9 @@ def _path_choices():
 	return [(p, p) for p in cands]
 
 
-class LeAutoTimeshiftSetup(Screen, ConfigListScreen):
+class LEAutoRecordSetup(Screen, ConfigListScreen):
 	skin = """
-		<screen name="LeAutoTimeshiftSetup" position="center,center" size="920,620" title="LE Auto Record">
+		<screen name="LEAutoRecordSetup" position="center,center" size="920,620" title="LE Auto Record">
 			<widget name="config" position="20,70" size="880,420" scrollbarMode="showOnDemand" />
 			<widget name="brand" position="20,10" size="880,50" font="Regular;22" halign="left" valign="center" />
 			<widget name="footnote" position="20,500" size="880,100" font="Regular;20" />
@@ -625,12 +640,12 @@ class LeAutoTimeshiftSetup(Screen, ConfigListScreen):
 
 	def _build(self):
 		self.list = [
-			getConfigListEntry(_("Enable auto-record"), config.plugins.leautots.enabled),
+			getConfigListEntry(_("Enable auto-record"), config.plugins.lear.enabled),
 			getConfigListEntry(_("Save every watched programme"), config.timeshift.autorecord),
 			getConfigListEntry(_("Folder for saved movies"), self.path_sel),
 			getConfigListEntry(_("New file when programme changes (EPG)"), config.timeshift.fileSplitting),
-			getConfigListEntry(_("Ignore zaps shorter than (minutes)"), config.plugins.leautots.minminutes),
-			getConfigListEntry(_("Seconds before EPG end to rotate file"), config.plugins.leautots.margin),
+			getConfigListEntry(_("Ignore zaps shorter than (minutes)"), config.plugins.lear.minminutes),
+			getConfigListEntry(_("Seconds before EPG end to rotate file"), config.plugins.lear.margin),
 			getConfigListEntry(_("Cleanup check every"), config.timeshift.checkEvents),
 			getConfigListEntry(_("Keep only newest N autosaves (0 = all)"), config.timeshift.maxEvents),
 			getConfigListEntry(_("Delete leftover buffers after (hours, 0 = keep)"), config.timeshift.maxHours),
@@ -659,9 +674,9 @@ class LeAutoTimeshiftSetup(Screen, ConfigListScreen):
 		except Exception:
 			pass
 		for entry in (
-			config.plugins.leautots.enabled,
-			config.plugins.leautots.minminutes,
-			config.plugins.leautots.margin,
+			config.plugins.lear.enabled,
+			config.plugins.lear.minminutes,
+			config.plugins.lear.margin,
 			config.timeshift.autorecord,
 			config.timeshift.recordingPath,
 			config.timeshift.path,
@@ -687,7 +702,7 @@ class LeAutoTimeshiftSetup(Screen, ConfigListScreen):
 
 
 def main(session, **kwargs):
-	session.open(LeAutoTimeshiftSetup)
+	session.open(LEAutoRecordSetup)
 
 
 # ---------------------------------------------------------------------------
@@ -702,7 +717,7 @@ def autostart(reason, **kwargs):
 		InfoBarTimeshift.stopTimeshiftcheckTimeshiftRunningCallback = patched_stopCb
 		_patched = True
 		_clean_timer is None and _clean_cycle()
-		_log("patches applied (OpenATV autorecord port)")
+		_log("patches applied (LE Auto Record)")
 
 
 def Plugins(**kwargs):
