@@ -362,14 +362,6 @@ def _sweep_sidecars(directory):
 					break
 	except Exception as e:
 		_log("sidecar sweep error: %s" % e)
-	try:
-		# Stock E2 sometimes still drops an empty movie/ under the save path — delete it.
-		mvdir = os.path.join(directory, "movie")
-		if os.path.isdir(mvdir) and not os.listdir(mvdir):
-			os.rmdir(mvdir)
-			_log("removed empty movie/ dir")
-	except Exception:
-		pass
 
 
 def _schedule_sweep(directory):
@@ -485,7 +477,6 @@ def _mount_watchdog(directory):
 def _clean_cycle():
 	global _clean_timer
 	try:
-		_kill_movie_subdir()
 		directory = _save_dir()
 		try:
 			_mount_watchdog(directory)
@@ -545,40 +536,43 @@ def _clean_cycle():
 
 
 
-def _kill_movie_subdir():
-	"""OpenPLi AutoMount.makeHDDlink always mkdir /media/hdd/movie — strip it."""
-	for base in ("/media/hdd", "/media/net/OREC"):
-		mv = os.path.join(base, "movie")
-		try:
-			if os.path.isdir(mv) and not os.listdir(mv):
-				os.rmdir(mv)
-				_log("removed empty movie/ under %s" % base)
-		except Exception as e:
-			_log("movie/ remove error: %s" % e)
+def _is_movie_subdir(path):
+	try:
+		return os.path.basename(os.path.normpath(path)) == "movie"
+	except Exception:
+		return False
 
 
 def _patch_no_movie_dir():
-	"""Stop stock OpenPLi from recreating OREC/movie on every NAS/HDD link."""
+	"""Block stock OpenPLi from creating .../movie (AutoMount + Harddisk). Do not create, do not delete-after."""
 	try:
 		from Components.Harddisk import Harddisk
 		Harddisk.createMovieDir = lambda self: None
-		_log("Harddisk.createMovieDir disabled")
+		_log("Harddisk.createMovieDir blocked")
 	except Exception as e:
 		_log("Harddisk patch failed: %s" % e)
 	try:
 		from Plugins.SystemPlugins.NetworkBrowser.AutoMount import AutoMount
 		_orig = AutoMount.makeHDDlink
+		_real_mkdir = os.mkdir
+
+		def _blocked_mkdir(path, mode=0o777):
+			if _is_movie_subdir(path):
+				_log("blocked mkdir %s" % path)
+				return None
+			return _real_mkdir(path, mode)
 
 		def _makeHDDlink(self, path):
-			r = _orig(self, path)
-			_kill_movie_subdir()
-			return r
+			os.mkdir = _blocked_mkdir
+			try:
+				return _orig(self, path)
+			finally:
+				os.mkdir = _real_mkdir
 
 		AutoMount.makeHDDlink = _makeHDDlink
-		_log("AutoMount.makeHDDlink wrapped (no movie/)")
+		_log("AutoMount.makeHDDlink: movie/ mkdir blocked")
 	except Exception as e:
 		_log("AutoMount patch failed: %s" % e)
-	_kill_movie_subdir()
 
 # ---------------------------------------------------------------------------
 # Setup GUI — user-facing product name: LE Auto Record (Logic Encoder)
