@@ -22,21 +22,13 @@ Restart the Enigma2 GUI. Open:
 
 Enable auto-record, set **Folder for saved movies**, and keep OpenPLi’s own “Automatically start …” delay enabled so the live buffer actually runs.
 
-If you previously installed the old folder name `LeAutoTimeshift`, remove it after copying `LEAutoRecord`:
-
-```bash
-rm -rf /usr/lib/enigma2/python/Plugins/Extensions/LeAutoTimeshift
-```
-
-## What is included
+## Features
 
 | Feature | Role |
 |--------|------|
-| Auto-record of watched programmes | Core — writes normal `.ts` files |
+| Auto-record of watched programmes | Writes normal `.ts` files |
 | Setup GUI | Path, min zap length, EPG split, cleanup |
 | CIFS mount watchdog | Remount NAS movie folder if it drops |
-| Volume / mute | Not included |
-| Permanent OSD clock | Not included — use **PermanentClock** |
 
 ## Settings (GUI)
 
