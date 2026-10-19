@@ -184,7 +184,8 @@ def _arm(self):
 	self._leats_since = time()
 	self._leats_pending = True
 	self.save_timeshift_file = True
-	self.save_timeshift_in_movie_dir = True
+	# Always save into recordingPath root — never create OREC/movie/
+	self.save_timeshift_in_movie_dir = False
 	self._leats_meta = _event_info(self)
 	ts = self.getTimeshift()
 	if ts:
@@ -325,7 +326,7 @@ def patched_saveFiles(self):
 	dest_base = None
 	try:
 		if self.save_timeshift_file:
-			dirname = _save_dir() if getattr(self, "save_timeshift_in_movie_dir", True) else (config.usage.timeshift_path.value or _save_dir())
+			dirname = _save_dir() if getattr(self, "save_timeshift_in_movie_dir", False) else (config.usage.timeshift_path.value or _save_dir())
 			dest_base = getRecordingFilename(self.new_timeshift_filename, dirname)
 	except Exception as e:
 		_log("dest base error: %s" % e)
@@ -362,6 +363,7 @@ def _sweep_sidecars(directory):
 	except Exception as e:
 		_log("sidecar sweep error: %s" % e)
 	try:
+		# Stock E2 sometimes still drops an empty movie/ under the save path — delete it.
 		mvdir = os.path.join(directory, "movie")
 		if os.path.isdir(mvdir) and not os.listdir(mvdir):
 			os.rmdir(mvdir)
@@ -483,6 +485,7 @@ def _mount_watchdog(directory):
 def _clean_cycle():
 	global _clean_timer
 	try:
+		_kill_movie_subdir()
 		directory = _save_dir()
 		try:
 			_mount_watchdog(directory)
@@ -541,6 +544,42 @@ def _clean_cycle():
 		_clean_timer.startLongTimer(mins * 60)
 
 
+
+def _kill_movie_subdir():
+	"""OpenPLi AutoMount.makeHDDlink always mkdir /media/hdd/movie — strip it."""
+	for base in ("/media/hdd", "/media/net/OREC"):
+		mv = os.path.join(base, "movie")
+		try:
+			if os.path.isdir(mv) and not os.listdir(mv):
+				os.rmdir(mv)
+				_log("removed empty movie/ under %s" % base)
+		except Exception as e:
+			_log("movie/ remove error: %s" % e)
+
+
+def _patch_no_movie_dir():
+	"""Stop stock OpenPLi from recreating OREC/movie on every NAS/HDD link."""
+	try:
+		from Components.Harddisk import Harddisk
+		Harddisk.createMovieDir = lambda self: None
+		_log("Harddisk.createMovieDir disabled")
+	except Exception as e:
+		_log("Harddisk patch failed: %s" % e)
+	try:
+		from Plugins.SystemPlugins.NetworkBrowser.AutoMount import AutoMount
+		_orig = AutoMount.makeHDDlink
+
+		def _makeHDDlink(self, path):
+			r = _orig(self, path)
+			_kill_movie_subdir()
+			return r
+
+		AutoMount.makeHDDlink = _makeHDDlink
+		_log("AutoMount.makeHDDlink wrapped (no movie/)")
+	except Exception as e:
+		_log("AutoMount patch failed: %s" % e)
+	_kill_movie_subdir()
+
 # ---------------------------------------------------------------------------
 # Setup GUI — user-facing product name: LE Auto Record (Logic Encoder)
 # ---------------------------------------------------------------------------
@@ -570,11 +609,9 @@ def _path_choices():
 		list(allowed)
 		+ [
 			"/media/hdd/",
-			"/media/hdd/movie/",
 			"/media/net/OREC/",
 			"/media/net/",
 			"/media/usb/",
-			"/media/usb/movie/",
 		]
 	):
 		if not p:
@@ -717,6 +754,7 @@ def autostart(reason, **kwargs):
 		InfoBarTimeshift.stopTimeshiftcheckTimeshiftRunningCallback = patched_stopCb
 		_patched = True
 		_clean_timer is None and _clean_cycle()
+		_patch_no_movie_dir()
 		_log("patches applied (LE Auto Record)")
 
 
