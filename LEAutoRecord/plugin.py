@@ -685,7 +685,6 @@ class LEAutoRecordSetup(Screen, ConfigListScreen):
 			getConfigListEntry(_("Ignore zaps shorter than (minutes)"), config.plugins.lear.minminutes),
 			getConfigListEntry(_("Seconds before EPG end to rotate file"), config.plugins.lear.margin),
 			getConfigListEntry(_("Cleanup check every"), config.timeshift.checkEvents),
-			getConfigListEntry(_("Keep only newest N autosaves (0 = all)"), config.timeshift.maxEvents),
 			getConfigListEntry(_("Delete leftover buffers after (hours, 0 = keep)"), config.timeshift.maxHours),
 			getConfigListEntry(_("Stop saving if free space below (MB, 0 = off)"), config.timeshift.checkFreeSpace),
 		]

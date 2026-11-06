@@ -41,7 +41,6 @@ Enable auto-record, set **Folder for saved movies**, and keep OpenPLiâ€™s own â€
 | Ignore zaps shorter than (minutes) | Surfing does not create junk |
 | Seconds before EPG end to rotate file | Clean split between programmes |
 | Cleanup check every | How often leftovers are tidied |
-| Keep only newest N autosaves | Cap disk use (`0` = keep all) |
 | Delete leftover buffers after (hours) | Remove orphan buffers (`0` = keep) |
 | Stop saving if free space below (MB) | Protect the disk (`0` = off) |
 
